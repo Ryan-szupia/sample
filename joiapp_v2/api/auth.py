@@ -1,14 +1,40 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
 from joiapp_v2.config.firebase import db
-from joiapp_v2.security.security import hash_password, decode_token, verify_token, refresh_access_token, create_access_token, create_refresh_token
+from joiapp_v2.security.security import hash_password, decode_token, verify_token_with_refresh, create_access_token, create_refresh_token
 from passlib.context import CryptContext
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from google.cloud.firestore import Transaction
+from google.cloud.firestore import Transaction, firestore
+from joiapp_v2.security.email import generate_verification_code, send_verification_email
+import re
 
 router = APIRouter()
 
-## signup logic
+# auth part
+
+# email pattern check logic
+def validate_email(email: str) -> bool:
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+# send email
+@router.post("/send-verification")
+async def send_verification_code(email: str):
+    
+    if not validate_email(email):
+        raise HTTPException(400, "Invalid email format")
+    
+    users = db.collection("users").where("email", "==", email).get()
+    if users:
+        raise HTTPException(400, "Email already registered")
+    
+    code = generate_verification_code()
+    
+    
+    
+    
+
+# signup logic
 @router.post("/signup")
 def signup(email: str, password: str, name: str, time_zone: str, info_agree: bool):
 
@@ -47,14 +73,12 @@ def signup(email: str, password: str, name: str, time_zone: str, info_agree: boo
 
     try:
         db.transaction()(signup_transaction)
-    except HTTPException:
-        raise
     except Exception:
         raise HTTPException(500, "Signup failed")
 
     return {"message": "Signup successful"}
 
-## login logic
+# login logic
 @router.post("/login")
 def login(email: str, password: str):
     users = db.collection("users").where("email", "==", email).get()
@@ -111,9 +135,10 @@ def login(email: str, password: str):
         "access_token": access_token,
     }
     
+# logout logic
 @router.get("/logout")
-def logout(token_data: dict = Depends(verify_token)):
-    user_id = token_data.get("user_id")
+def logout(email: str):
+    user_id = email
     
     db.collection("users").document(user_id).update({
         "refresh_token": None
