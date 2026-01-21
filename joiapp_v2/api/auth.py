@@ -19,7 +19,7 @@ def validate_email(email: str) -> bool:
 
 # send email
 @router.post("/send-verification")
-async def send_verification_code(email: str):
+async def send_verification_code(email: str, time_zone: str, transaction: Transaction):
     
     if not validate_email(email):
         raise HTTPException(400, "Invalid email format")
@@ -30,6 +30,13 @@ async def send_verification_code(email: str):
     
     code = generate_verification_code()
     
+    now = datetime.now(ZoneInfo(time_zone))
+    today = now.strftime("%Y-%m-%d")
+    
+    validate_doc = db.collection("users").document(email).collection("validate").document(today)
+    
+    if validate_doc.exists:
+        
     
     
     
