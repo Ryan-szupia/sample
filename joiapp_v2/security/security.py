@@ -107,12 +107,19 @@ def get_current_user(
     payload: dict = Depends(verify_token_with_refresh)
 ):
     user_id = payload.get("user_id")
+    if not user_id:
+        raise HTTPException(401, "Invalid token")
+    
     user_doc = db.collection("users").document(user_id).get()
     
     if not user_doc.exists:
         raise HTTPException(404, "User not found")
     
-    return user_doc.to_dict()
+    user_data = user_doc.to_dict()
+    
+    user_data["user_id"] = user_id
+    
+    return user_data
                 
 # user role check
 def require_role(required: str):

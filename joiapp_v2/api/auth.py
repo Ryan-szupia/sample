@@ -19,26 +19,62 @@ def validate_email(email: str) -> bool:
 
 # send email
 @router.post("/send-verification")
-async def send_verification_code(email: str, time_zone: str, transaction: Transaction):
+async def send_verification_code(email: str, time_zone: str):
     
     if not validate_email(email):
         raise HTTPException(400, "Invalid email format")
     
-    users = db.collection("users").where("email", "==", email).get()
-    if users:
+    users = db.collection("users").where("email", "==", email).limit(1).get()
+    user = users[0]
+    if user:
         raise HTTPException(400, "Email already registered")
     
     code = generate_verification_code()
     
     now = datetime.now(ZoneInfo(time_zone))
-    today = now.strftime("%Y-%m-%d")
+    now_utc = now.astimezone(time_zone("UTC"))
     
-    validate_doc = db.collection("users").document(email).collection("validate").document(today)
+    validate_ref = db.collection("validate").document(email)
+    validate_doc = validate_ref.get()
     
     if validate_doc.exists:
+        validate_data = validate_doc.to_dict()
+        create_at = validate_data.get("create_at")
         
+        if create_at:
+            if now_utc - create_at < timedelta(minutes=3):
+                raise HTTPException(429, "Please press the send button again after 3 minutes.")
+        
+    send_verification_email(email, code)
     
+    validate_ref.set({
+        "create_at": now_utc,
+        "code": code,
+    })
+        
+#email code check
+@router.post("/send-verification/check")
+def send_verification_check(email: str, code: str, time_zone: str):
+    validate_ref = db.collection("validate").document(email)
+    validate_doc = validate_ref.get()
     
+    if validate_doc.exists:
+        return {"message": "Please send the authentication number first."}
+    
+    now = datetime.now(ZoneInfo(time_zone))
+    now_utc = now.astimezone(ZoneInfo("UTC"))
+    
+    validate_dict = validate_doc.to_dict()
+    
+    db_code = validate_dict.get("code")
+    create_at = validate_dict.get("create_at")
+    
+    if (db_code == code and now_utc - create_at <= timedelta(minutes=5)):
+        validate_ref.delete()
+        return {"message": "Email code validate successful"}
+    
+    validate_ref.delete()
+    return {"message": "Email code validate failed"}
     
 
 # signup logic
@@ -47,22 +83,22 @@ def signup(email: str, password: str, name: str, time_zone: str, info_agree: boo
 
     try:
         create_date = datetime.now(ZoneInfo(time_zone))
+        create_at = create_date.astimezone(ZoneInfo("UTC"))
     except Exception:
         raise HTTPException(400, f"Invalid timezone: {time_zone}")
 
     password_hash = hash_password(password)
 
+    users_ref = db.collection("users")
+    email_index_ref = db.collection("user_emails").document(email)
+    
     def signup_transaction(transaction: Transaction):
-        users_ref = db.collection("users")
-
-        query = users_ref.where("email", "==", email).limit(1)
-        docs = query.stream(transaction=transaction)
-
-        if any(docs):
-            raise HTTPException(400, "Email already exists")
-
-        user_ref = users_ref.document(email)
-
+        email_snapshot = email_index_ref.get(transaction=transaction)
+        if email_snapshot.exists:
+            raise RuntimeError("Email already exists")
+        
+        user_ref = users_ref.document()
+        
         transaction.set(user_ref, {
             "email": email,
             "password_hash": password_hash,
@@ -77,18 +113,22 @@ def signup(email: str, password: str, name: str, time_zone: str, info_agree: boo
             "gad7_complete": False,
             "deep_complete": False,
         })
-
+        
+        transaction.set(email_index_ref, {
+            "user_id": user_ref.id,
+        })
+        
     try:
         db.transaction()(signup_transaction)
-    except Exception:
+    except:
         raise HTTPException(500, "Signup failed")
-
+    
     return {"message": "Signup successful"}
 
 # login logic
 @router.post("/login")
 def login(email: str, password: str):
-    users = db.collection("users").where("email", "==", email).get()
+    users = db.collection("users").where("email", "==", email).limit(1).get()
     if not users:
         raise HTTPException(401, "Invalid credentials")
     
@@ -109,10 +149,11 @@ def login(email: str, password: str):
 
     if user_data.get("last_login_date") is not None:
         date = datetime.now(ZoneInfo(user_data.get("time_zone", "UTC")))
+        date_utc = date.astimezone(ZoneInfo("UTC"))
         last_date = user_data.get("last_login_date", None)
         point = user_data.get("joi_point", 0)
         
-        days_diff = (date.date() - last_date.date()).days
+        days_diff = (date_utc.date() - last_date.date()).days
         
         if days_diff >= 1:
             point += 5
@@ -121,7 +162,13 @@ def login(email: str, password: str):
             "last_login_date": date,
             "joi_point": point,
             "refresh_token": refresh_token,
+            "phq9_complete": False,
+            "gad7_complete": False,
+            "deep_complete": False,
         })
+        user_data["phq9_complete"] = False
+        user_data["gad7_complete"] = False
+        user_data["deep_complete"] = False
     else:
         point = 5
         date = datetime.now(ZoneInfo(user_data.get("time_zone", "UTC")))
@@ -145,9 +192,15 @@ def login(email: str, password: str):
 # logout logic
 @router.get("/logout")
 def logout(email: str):
-    user_id = email
     
-    db.collection("users").document(user_id).update({
+    docs = db.collection("users").where("email", "==", email).limit(1).get()
+    
+    doc = docs[0]
+    
+    if not doc:
+        raise HTTPException(404, "User not found")
+    
+    doc.reference.update({
         "refresh_token": None
     })
 

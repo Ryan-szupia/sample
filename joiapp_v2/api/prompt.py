@@ -68,25 +68,35 @@ async def generate_action_items(email: str, time_zone: str):
     )
     
     content = response.choices[0].message["content"]
-    new_items = json.loads(content)
+    try:
+        new_items = json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(500, "Invalid AI response")
     return new_items
 
-router.get("/create_action_items")
-async def create_action_items(email: str, time_zone: str, transaction: Transaction, current_user: dict = Depends(get_current_user)):
-    
+@router.get("/create_action_items")
+async def create_action_items(current_user: dict = Depends(get_current_user)):
+    email = current_user["email"]
+    time_zone = current_user["time_zone"]
     now = datetime.now(ZoneInfo(time_zone))
     today = now.strftime("%Y-%m-%d")
-    user_ref = db.collection("users").document(email)
+    user_docs = db.collection("users").where("email", "==", email).limit(1).get()
+    
+    if not user_docs:
+        raise HTTPException(404, "User not found")
+    
+    user_doc = user_docs[0]
+    user_ref = user_doc.reference
     action_doc_ref = user_ref.collection("action_items").document(today)
     
     action_doc = action_doc_ref.get()
     if action_doc.exists:
-        items = action_doc.to_dict.get("items", [])
+        items = action_doc.to_dict().get("items", [])
         return {"items": items}
     
     new_items = await generate_action_items(email, time_zone)
     
-    select_items = random.samle(new_items, 2)
+    select_items = random.sample(new_items, 2)
     
     update_items = []
     new_utc = now.astimezone(ZoneInfo("UTC"))
@@ -99,10 +109,15 @@ async def create_action_items(email: str, time_zone: str, transaction: Transacti
             "complete_date": None
         })
     
-    user_ref = db.collection("users").document("where", "==", email).action_items.get()
-    transaction.set(action_doc_ref, {
-        "itmes": update_items
-    })
+    def action_transaction(transaction: Transaction):
+        snapshot = action_doc_ref.get(transaction=transaction)
+        if snapshot.exists:
+            raise HTTPException(500, "Generate action_items failed")
+        
+        transaction.set(action_doc_ref, {
+            "items": update_items
+        })
+    db.transaction()(action_transaction)
     
     return update_items
     

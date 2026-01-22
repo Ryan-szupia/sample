@@ -1,15 +1,41 @@
+from fastapi import APIRouter, HTTPException, Depends
 from joiapp_v2.security.security import get_current_user
+from joiapp_v2.config.firebase import db
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from google.cloud.firestore import Transaction
+
+router = APIRouter()
 
 @router.get("/userdata")
-def get_user_data(
-    current_user: dict = Depends(get_current_user)
-):
-    return {
-        "email": current_user.get("email"),
-        "name": current_user.get("name"),
-        "data": "data"
-    }
-
+def get_user_data(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    user_doc = db.collection("users").document(user_id).get()
+    
+    user_data = user_doc.to_dict()
+    user_data.pop("password_hash", None)
+    user_data.pop("refresh_token", None)
+    
+    return {"user": user_data}
+    
+@router.post("/phq9/save")
+def user_phq9_save(phq9_data: list[str], current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    time_zone = current_user["time_zone"]
+    now = datetime.now(ZoneInfo(time_zone))
+    now_utc = now.astimezone(ZoneInfo("UTC"))
+    today_str = now_utc.strftime("%Y-%m-%d")
+    
+    phq9_ref = db.collection("users").document(user_id).collection("phq9_assessments").document(today_str)
+    
+    def phq9_data_transaction(transaction: Transaction):
+        snapshot = phq9_ref.get(transaction = transaction)
+        if snapshot.exists:
+            raise HTTPException(500, "PHQ9_data save failed")
+        
+        
+    
+    
 # @router.get("/admindata")
 # def get_admin_data(
 #     current_user: dict = Depends(require_role("admin"))
