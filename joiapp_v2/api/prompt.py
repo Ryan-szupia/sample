@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
-from joiapp_v2.config.firebase import db
-from joiapp_v2.config.secrets import OPENAI_API_KEY
+from config.firebase import db
+from config.secrets import OPENAI_API_KEY
 from openai import OpenAI
 from google.cloud.firestore import Transaction
-from joiapp_v2.security.security import get_current_user
+from security.security import get_current_user
 import random
 import json
 from datetime import datetime, timedelta

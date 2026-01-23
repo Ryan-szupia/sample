@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends, Header
-from joiapp_v2.config.firebase import db
-from joiapp_v2.security.security import hash_password, decode_token, verify_token_with_refresh, create_access_token, create_refresh_token
+from config.firebase import db
+from security.security import hash_password, decode_token, verify_token_with_refresh, create_access_token, create_refresh_token
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from google.cloud.firestore import Transaction, firestore
-from joiapp_v2.security.email import generate_verification_code, send_verification_email
+from google.cloud.firestore import Transaction
+from security.email import generate_verification_code, send_verification_email
 import re
 
 router = APIRouter()
@@ -106,6 +106,7 @@ def signup(email: str, password: str, name: str, time_zone: str, info_agree: boo
             "create_date": create_date,
             "last_login_date": None,
             "time_zone": time_zone,
+            "provider": "local",
             "joi_point": 0,
             "role": "USER",
             "info_agree": info_agree,

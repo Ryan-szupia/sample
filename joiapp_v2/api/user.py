@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
-from joiapp_v2.security.security import get_current_user
-from joiapp_v2.config.firebase import db
+from security.security import get_current_user
+from config.firebase import db
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from google.cloud.firestore import Transaction

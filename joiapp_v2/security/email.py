@@ -1,5 +1,5 @@
 from fastapi_mail import MessageSchema, FastMail
-from joiapp_v2.config.secrets import mail_config
+from config.secrets import mail_config
 import random
 import string
 

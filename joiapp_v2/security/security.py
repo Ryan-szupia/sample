@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
-from joiapp_v2.config.firebase import db
+from config.firebase import db
 from passlib.context import CryptContext
 from fastapi import HTTPException, Header, Response, Depends
-from joiapp_v2.config.secrets import JWT_SECRET_KEY
-from joiapp_v2.config.jwt import (
+from config.secrets import JWT_SECRET_KEY
+from config.jwt import (
     ALGORITHM,
     ACCESS_TOKEN_EXPIRE_MINUTES,
     REFRESH_TOKEN_EXPIRE_DAYS,
